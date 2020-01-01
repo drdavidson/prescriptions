@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta id='metaCounter' counter='0'>
+<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+<link rel="stylesheet" href="https://www.w3schools.com/lib/w3-theme-blue.css">
+</head>
+<style>
+ 
+ <!–– html{width:600px} -->
+
+.w3-btn{
+ border-radius: 8px;
+ margin-left: 10px;
+ margin-top: 5px;
+ width: 240px;
+ }
+ 
+</style>
+  <body class ="w3-theme-l3">
+     <table class="w3-container">
+      <tr> 
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" list="datalistVets" placeholder="Veterinarian" onfocus="document.getElementById('clientSelect').value = '';this.value=''" onchange="updateClientList(); focusOnObject('clientSelect')" id="vetSelect" style="float:left"> </td>
+        <td> Select Your Name </td>
+      </tr>
+      <tr> 
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" list="datalistClientNames" placeholder="Client" onchange="focusOnObject('button.createReport')" id="clientSelect" style="float:left"> </td>
+        <td> Select Your Client </td>
+      </tr>  
+      <tr>      
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="button" value="Show all Clients" width="15px" onclick="updateClientList('ALL')"></td>
+        <td> If needed, click to list all clients </td>
+      </tr>
+      <tr> 
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="date" id="inputStartDate" value='2020-03-01' style="float:left"> </td>
+        <td> Script Start Date (Format MM/DD/YYYY) </td>
+      <tr>
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="date" id="inputEndDate" value='2020-03-01' style="float:left"/> </td>
+        <td> Script End Date (Format MM/DD/YYYY) </td>
+      </tr>
+      <tr> 
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="number" id="refillNum" value="5" onfocus="this.value=''" style="float:left"> </td>
+        <td> Refill Number </td>
+      </tr>
+      <tr>
+        <td> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="button" value="Select Medications" id='button.createReport' onclick='createReport()'>  </td>
+        <td> Move to medication selection </td>
+      </tr>
+    </table>
+    <datalist id="datalistClientNames"> </datalist>
+    <datalist id="datalistVets"> </datalist>
+  <p id="sentList"> </p>
+  </body>
+
+<script>
+updateVetsList();
+updateDate();
+
+function focusOnObject(id){document.getElementById(id).focus()};
+
+function createReport() {
+var vet = document.getElementById("vetSelect").value;
+var client = document.getElementById("clientSelect").value;
+var startDate = document.getElementById("inputStartDate").value;
+var endDate = document.getElementById("inputEndDate").value;
+var numRefills = document.getElementById("refillNum").value;
+var newSheetName = client + ' ' + getDateStandardString(new Date);
+
+    google.script.run.prepareToEnterMeds(vet, client, startDate, endDate, numRefills, newSheetName);
+    google.script.run.selectMedsHTML(vet, client, startDate, endDate, numRefills, newSheetName);
+}
+
+function buildVetsList(vets) { 
+ var list = document.getElementById("datalistVets");
+ var node = undefined;
+ for (var i in vets) {
+  var option = document.createElement("option");
+   node = document.createTextNode(vets[i]);
+   option.appendChild(node);
+   list.appendChild(option);
+ }
+}
+
+function emptyList(list){
+ while( list.firstChild ){
+  list.removeChild( list.firstChild );
+}
+}
+
+function buildClientNamesList(clientNames) { 
+ var list = document.getElementById("datalistClientNames");
+ var node = undefined;
+ emptyList(list);
+
+ for (var i in clientNames) {
+  var option = document.createElement("option");
+   node = document.createTextNode(clientNames[i]);
+   option.appendChild(node);
+   list.appendChild(option);
+ }
+document.getElementById("clientSelect").disabled = false;
+}
+
+function buildLists(){
+updateDate();
+//updateQuota();
+}
+
+function updateVetsList() { google.script.run.withSuccessHandler(buildVetsList).getVetsNames(); }
+
+function updateClientList(allClients) { document.getElementById("clientSelect").disabled = true;
+if (allClients) { google.script.run.withSuccessHandler(buildClientNamesList).getClientListByVet(allClients) }
+else { var vet = document.getElementById("vetSelect").value; google.script.run.withSuccessHandler(buildClientNamesList).getClientListByVet(vet); }
+}
+
+function getDateStandardString(a) {    
+  var dateReturn = undefined;  
+  if (typeof a == 'string' && a.length == 10 ) { return a };
+ 
+  if (typeof a == 'string' && a.length > 15 ) //this should reinterpret the google sheets date string
+   { var dateReturn = new Date(a.slice(4, 15));
+//   Logger.log('recursive getDateStandardString (from string block)  =' + dateReturn); 
+   return getDateStandardString(dateReturn) }//this is because the googlesheets datestring is not recognized as a javascript date        
+
+  if (a === undefined) {
+    var dateReturn = new Date();
+    var y = dateReturn.getFullYear();
+    var m = dateReturn.getMonth() + 1; m = m.toString();
+        if (m.length === 1) { m = '0' + m };
+    var d = dateReturn.getDate() + 1; d = d.toString();
+        if (d.length === 1) { d = '0' + d };
+        dateReturn = y + '-' + m + '-' + d;
+//        Logger.log('returned from getDateStandardString (undefined block) = ' + dateReturn);
+    return dateReturn
+  } //end a == undefined 
+      
+  else { 
+    var y = a.getFullYear();
+    var m = a.getMonth() + 1; m = m.toString();
+        if (m.length === 1) { m = '0' + m };
+    var d = a.getDate(); d = d.toString();
+        if (d.length === 1) { d = '0' + d };
+        dateReturn = y + '-' + m + '-' + d;
+//    Logger.log('returned from getDateStandardString = ' + dateReturn);
+    return dateReturn
+  }
+}
+
+function updateDate(){ document.getElementById('inputStartDate').value = getDateStandardString(new Date());}
+
+</script>
+</html>
