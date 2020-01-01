@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta id='metaCounter' counter='0'>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+<link rel="stylesheet" href="https://www.w3schools.com/lib/w3-theme-blue.css">
+</head>
+<style>
+ 
+<!-- html{width:900px} -->
+
+/* Create three equal columns that floats next to each other */
+.columnLeft {
+  float: left;
+  width: 45%;
+}
+.columnMid {
+  float: left;
+  width: 25%;
+}
+.columnRight {
+  float: left;
+  width: 30%;
+}
+
+/* Clear floats after the columns */
+.row:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+.w3-btn{
+ border-radius: 8px;
+ margin-left: 10px;
+ margin-top: 5px;
+ width: 95%;
+ }
+
+.midText{
+text-align: center;
+vertical-align: middle;
+line-height: 50px; 
+}
+
+</style>
+  <body class ="w3-container w3-theme-l3">
+     <div>
+      <div class="row"> 
+        <div class="columnLeft"> <input class="w3-btn w3-theme-l2 w3-hover-theme" list="datalistMeds" placeholder="Select A Medication" 
+        onfocus="document.getElementById('input_quant').value = '';this.value=''" onchange="focusOnObject('input_quant')" id="medSelect" style="float:left"> </div>
+        
+        <div class="columnMid"> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="text" placeholder='Quantity' id="input_quant" 
+        onfocus="this.value=''" oninput="document.getElementById('button.add').disabled=false;" onchange="focusOnObject('button.add')" style="float:left"> </div>
+        
+        <div class="columnRight"> <input class="w3-btn w3-theme-l2 w3-hover-theme" type="button" value='Add Selection' id="button.add" disabled='true' 
+        onclick="addToScriptList(); focusOnObject('medSelect'); this.disabled=true" style="float:left"> </div>
+      </div>
+    </div>
+  <div id="table.medsToAdd"> </div>
+  <input class="w3-btn w3-theme-l2 w3-hover-theme" type="button" value='Create Script' id="button.createReport" onclick="sendSelections(); this.disabled=true" style="display:none">
+  <div>
+  <p id='demo'></p>
+  <p id='timer'></p>
+  </div>
+  <datalist id="datalistMeds"> </datalist>
+  </body>
+
+<script>
+updateMedsList();
+
+function focusOnObject(id){document.getElementById(id).focus()};
+
+function sendSelections(){
+  var table = document.getElementById('table.medsToAdd');
+  var arr = [];
+  var p = document.getElementById('demo');
+  var rows = table.getElementsByClassName('row');
+  for (var i = 0; i < rows.length; i ++) {
+    var med = rows[i].childNodes[0].innerText;
+    var quant = rows[i].childNodes[1].innerText;
+    arr.push([[med],[quant]]);
+  }
+      p.innerHTML += '<br> The above medications sent to prescription';
+      google.script.run.addSelectionsToForm(arr);
+      p.innerHTML = 'Your script will now generate, and you can download and email, print, and or save your script.'
+      startTimer(5);
+}
+
+function addCellToRow(row,content){}
+
+function addToScriptList(){
+  var table = document.getElementById('table.medsToAdd');
+  var med = document.getElementById('medSelect').value;
+  var quant = document.getElementById('input_quant').value;
+
+  var tr = document.createElement('DIV'); 
+  tr.className="row";
+  var colMed = document.createElement('DIV'); 
+  colMed.className='columnLeft midText'; 
+  var colMedText=document.createTextNode(med);
+  var colQuant = document.createElement('DIV'); 
+  colQuant.className='columnMid midText';
+  var colQuantText=document.createTextNode(quant);
+  var tdDelete = document.createElement('DIV'); 
+  tdDelete.className='columnRight'; 
+  var deleteButton = document.createElement("INPUT");
+ 
+  getDeleteButtonOptions(deleteButton);
+  
+  table.appendChild(tr);   
+  tr.appendChild(colMed); colMed.appendChild(colMedText);
+  tr.appendChild(colQuant); colQuant.appendChild(colQuantText);
+  tr.appendChild(tdDelete); tdDelete.appendChild(deleteButton);
+
+  var finishButton = document.getElementById('button.createReport');
+  finishButton.style.display = 'initial';
+}
+
+function getDeleteButtonOptions(button){
+  button.value = 'Remove This Selection';
+  button.className = 'w3-btn w3-theme-l2 w3-hover-theme';
+  button.addEventListener("click", function(){delete_row(this)});
+}
+
+function delete_row(e) { e.parentNode.parentNode.parentNode.removeChild(e.parentNode.parentNode); }
+
+function buildMedsList(meds) { 
+ var list = document.getElementById("datalistMeds");
+ var node = undefined;
+ meds.data.shift(); //takes the heading off
+ for (var i in meds.data) {
+  var option = document.createElement("option");
+   node = document.createTextNode(meds.data[i][meds.titlesInd.shortName]);
+   option.appendChild(node);
+   list.appendChild(option);
+ }
+}
+
+function emptyList(list){ while (list.firstChild) {list.removeChild(list.firstChild);}}
+
+function updateMedsList() { google.script.run.withSuccessHandler(buildMedsList).getMeds(); }
+
+function startTimer(time){
+if (time == undefined) {time = 7};
+var counter = 0;
+var x = setInterval(function() {
+  
+  var distance = time - counter;
+  counter ++;
+
+  document.getElementById("timer").innerHTML = 'This window will close in ' + distance + ' seconds';
+
+  // If the count down is finished, write some text
+  if (distance < 1) { clearInterval(x); google.script.host.close(); }
+}, 1000);
+}
+
+</script>
+</html>
