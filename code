@@ -1,0 +1,426 @@
+var globalNewSheetPosition = 500;
+var globalSheetNameVets = 'VetList';
+var globalSheetNameMeds = 'MedList';
+var globalSheetNameClients = 'ClientList';
+var globalSheetNameForm = 'Template.Form';
+    
+function prepareToEnterMeds(vet, client, startDate, endDate, numRefills, newSheetName){
+  
+  if (startDate) {startDate = getDateStandardString(startDate)} else {SpreadsheetApp.getUi().alert('No Start Date Selected'); return}
+  if (endDate) {endDate = getDateStandardString(endDate)} else {SpreadsheetApp.getUi().alert('No End Date Selected'); return}
+  
+  var templates = getTemplates();
+  var formatting = getFormFormatting(templates.form);
+  var clientObj = getClientInfo(client);
+  var vetObj = getVetInfo(vet);
+  newSheetName += ' ' + clientObj.distributor;
+  
+  var args = {
+    vetObj:vetObj,
+    clientObj:clientObj,
+    startDate:startDate,
+    endDate:endDate,
+    numRefills:numRefills,
+    newSheetName:newSheetName
+  };
+  
+ var newSheet = copyTemplate(templates, args);
+  
+ addNamesAndDatesToNewSheet(newSheet,formatting,args);
+ templates.form.isHidden(true);
+}
+
+function deleteScripts(){
+  var ss = SpreadsheetApp.getActive();
+  var sheets = ss.getSheets();
+  var clientObj = getClients();
+  for (var i in sheets) { if (checkIfOldScript(sheets[i].getName(),clientObj.names)) {
+    Logger.log(sheets[i].getName() + ' is a script name and sheet will be deleted');
+    ss.deleteSheet(sheets[i]);
+  }}
+  clearSlushSheet();
+}
+
+function checkIfOldScript(name,clientNames){
+  for (var x in clientNames) {
+    var tempName = name.slice(0,clientNames[x].length);
+      if (tempName == clientNames[x]) { return true } 
+  }
+  return false
+}
+
+function copyTemplate(templates, args){ // args[vetObj,clientObj,startDate,endDate,numRefills,newSheetName]
+  var newSheet = templates.ss.insertSheet(args.newSheetName, globalNewSheetPosition, {template: templates.form});
+  return newSheet
+}
+
+function addSelectionsToForm(arr){ //2d array with med and quant in each row 
+  if(arr){arr.sort()}
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var form = sheets[sheets.length-1];
+  var newSheetName = form.getName();
+  var formatting = getFormFormatting(form);
+  var meds = getMeds();
+  var activeRow = formatting.startRow;
+  var vet = form.getRange(formatting.cells.vet).getValue();
+  
+  for (var i in arr){ 
+      var med = arr[i][0];
+      var quant = arr[i][1];
+      for (var x = 1; x < meds.data.length; x ++){
+      if (med == meds.data[x][meds.titlesInd.shortName]) {
+        var row = x + 1;
+        meds.sheet.getRange(row,2).copyTo(form.getRange(activeRow,formatting.startColumn));
+        var rng = form.getRange(activeRow,formatting.quantColumn);
+        setAndStyleQuantity(rng,quant);
+        activeRow = activeRow + 2;
+          }
+    }
+  }
+  appendSignature(vet,form,activeRow);
+  trimSheet(form,formatting);
+  copyToIndividualFolder(form,vet,newSheetName);
+}
+
+function copyToIndividualFolder(form,vet,newSheetName){ 
+  var id = findVetsFileById(vet); Logger.log(id + ' dest folder');
+  var dest = SpreadsheetApp.openById(id);
+  var newSheet = form.copyTo(dest);
+  newSheet.setName(newSheetName);
+  dest.setActiveSheet(newSheet);
+  dest.moveActiveSheet(0);
+}
+
+function appendSignature(vet,sheet,activeRow){
+  var spaceForSig = 8;
+  var genericsCell = sheet.getRange(activeRow + spaceForSig, 1);
+  genericsCell.setValue('FDA approved generics allowed');
+  genericsCell.offset(-2, 0).setValue('x');
+    
+  var id = findVetsSigId(vet); 
+  if (id == 'No id found') { Logger.log(id); return }; 
+  var sig = DriveApp.getFileById(id).getBlob();
+  sheet.insertImage(sig,1,activeRow,12,12);//(blobSource, column, row, offsetX, offsetY)
+}
+
+function trimSheet(sheet, formatting){
+  var lastRow = sheet.getLastRow() + 1;
+  var numRows = formatting.maxRow - lastRow;
+  sheet.deleteRows(lastRow, numRows)//(rowPosition, howMany)
+  sheet.setHiddenGridlines(true);
+}
+
+function setAndStyleQuantity(rng,quant) {rng.setValue(quant).setFontSize(17).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');}
+
+function addNamesAndDatesToNewSheet(form,formatting,args){ //sheet,formatting,parameters from HTML
+  var cells = formatting.cells;
+  var addressLine1 = args.clientObj.address;
+  var addressLine2 = args.clientObj.city + ' ' + args.clientObj.state + ', ' + args.clientObj.zipcode;
+  
+  form.getRange(cells.vet).setValue(args.vetObj.vet);
+  form.getRange(cells.license).setValue(args.vetObj.license);
+  form.getRange(cells.date).setValue(getDateStandardString(new Date));
+  form.getRange(cells.client).setValue(args.clientObj.client);
+  form.getRange(cells.address).setValue(addressLine1);
+  form.getRange(cells.address).offset(1,0).setValue(addressLine2);
+  form.getRange(cells.startDate).setValue(args.startDate);
+  form.getRange(cells.endDate).setValue(args.endDate);
+  form.getRange(cells.refills).setValue(args.numRefills);
+}
+
+function getFormFormatting(sheet){
+  if (sheet==undefined){sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(globalSheetNameForm)};
+  
+  var cells = {
+    date:'a1',
+    vet:'a4',
+    license:'a5',
+    startDate:'b7',
+    endDate:'b8',
+    refills:'b9',
+    client:'d4',
+    address:'d5'
+  }
+  
+  var objReturn = {
+    cells:cells,
+    startRow:11,
+    startColumn:1,
+    maxRow:400,
+    quantColumn:4,
+    maxColumn:5
+  }
+  return objReturn
+  }
+
+
+function getMeds(ss,sheet){
+  if (ss == undefined){ss=SpreadsheetApp.getActiveSpreadsheet();}
+  if (sheet == undefined){sheet=ss.getSheetByName(globalSheetNameMeds);}
+ var rowStart = 1; var rowLast = sheet.getLastRow(); var columnStart = 1; var columnLast = sheet.getLastColumn();
+ var data = sheet.getRange(rowStart,columnStart,rowLast,columnLast).getValues(); //(row, column, numRows, numColumns)
+ var titles = getMedsTitles(data);
+  
+ var objReturn = {
+   ss:ss,
+   sheet:sheet,
+   data:data,
+   rowStart:rowStart,
+   rowLast:rowLast,
+   columnStart:columnStart,
+   columnLast:columnLast,
+   headings: data[0],
+   titles: titles.titles,
+   titlesInd: titles.titlesInd
+ }
+ return objReturn
+}
+
+function getMedsTitles(data){
+    var titles = {
+      shortName: 'Short Name',
+      label: 'Label'
+    };
+    var titlesInd = {}; for (var i in titles) titlesInd[i] = data[0].indexOf(titles[i]);
+    var object = {
+        titles: titles,
+        titlesInd: titlesInd
+    };
+    return object;
+}
+
+function getDateStandardString(a) {  
+//Logger.log('argument passed to getDateStandardString; typeOf = ' + typeof a + ', ' + a);
+  
+  var dateReturn = undefined;  
+  if (typeof a == 'string' && a.length == 10 ) { return a };
+ 
+  if (typeof a == 'string' && a.length > 15 ) //this should reinterpret the google sheets date string
+   { var dateReturn = new Date(a.slice(4, 15));
+//   Logger.log('recursive getDateStandardString (from string block)  =' + dateReturn); 
+   return getDateStandardString(dateReturn) }//this is because the googlesheets datestring is not recognized as a javascript date        
+
+  if (a === undefined) {
+    var dateReturn = new Date();
+    var y = dateReturn.getFullYear();
+    var m = dateReturn.getMonth() + 1; m = m.toString();
+        if (m.length === 1) { m = '0' + m };
+    var d = dateReturn.getDate() + 1; d = d.toString();
+        if (d.length === 1) { d = '0' + d };
+        dateReturn = y + '-' + m + '-' + d;
+//        Logger.log('returned from getDateStandardString (undefined block) = ' + dateReturn);
+    return dateReturn
+  } //end a == undefined 
+      
+  else { 
+    var y = a.getFullYear();
+    var m = a.getMonth() + 1; m = m.toString();
+        if (m.length === 1) { m = '0' + m };
+    var d = a.getDate(); d = d.toString();
+        if (d.length === 1) { d = '0' + d };
+        dateReturn = y + '-' + m + '-' + d;
+//    Logger.log('returned from getDateStandardString = ' + dateReturn);
+    return dateReturn
+  }
+}
+
+
+function copyFormAndName(options) {
+  var client = options.clients.client;
+  var distributor = options.clients.clientInfo[options.clients.titlesInd.distributor];
+  var name = client + ' ' + options.formatting.date + ' ' + distributor;
+  var vetDest = SpreadsheetApp.openById(options.vets.fileID);
+  options.report = options.form.sheet.copyTo(vetDest);
+ 
+  options.report.setName(name);
+  
+  options.report.setHiddenGridlines(options.formatting.hiddenGridlines);
+  
+  vetDest.setActiveSheet(options.report); vetDest.moveActiveSheet(0); 
+}
+
+
+function addSignatureToReport(options){
+  var row = options.form.range.lastRow;
+  var sig = DriveApp.getFileById(options.vets.sigID).getBlob();
+  
+   options.report.insertImage(sig, 1, row, 100, 0); //insertImage(blob, column, row, offsetX, offsetY)
+   options.report.getRange(row + 7, 1).setValue(options.formatting.genericStatement);
+}
+
+function getTemplates(ss,sheets) {
+  if (ss==undefined) {ss=SpreadsheetApp.getActiveSpreadsheet();}
+  if (sheets==undefined) {sheets=ss.getSheets();}
+  var form = ss.getSheetByName(globalSheetNameForm);
+  var objReturn = {
+    ss:ss,
+    sheets:sheets,
+    form:form
+  }
+  return objReturn
+}
+
+
+function getClients(ss, sheet){
+  if (ss == undefined) {ss=SpreadsheetApp.getActiveSpreadsheet();}
+  if (sheet == undefined){sheet=ss.getSheetByName(globalSheetNameClients);}
+ var arrNames = [];
+ var rowStart = 1; var rowLast = sheet.getLastRow(); var columnStart = 1; var columnLast = sheet.getLastColumn();
+ var data = sheet.getRange(rowStart,columnStart,rowLast,columnLast).getValues(); //(row, column, numRows, numColumns)
+
+ var titles = getClientTitles(data);
+  for (var i in data) {arrNames.push(data[i][titles.titlesInd.client]);}
+  
+  arrNames.shift();//takes the column title off of the names list
+
+ var objReturn = {
+   ss:ss,
+   sheet:sheet,
+   data:data,
+   rowStart:rowStart,
+   rowLast:rowLast,
+   columnStart:columnStart,
+   columnLast:columnLast,
+   headings: data[0],
+   names:arrNames,
+   titles: titles.titles,
+   titlesInd: titles.titlesInd
+ }
+
+ return objReturn
+}
+
+function getClientTitles(data){
+    var titles = {
+      client: 'Client',
+      vet: 'Vet',
+      address: 'Address',
+      city: 'City',
+      state: 'State',
+      zipcode: 'Zipcode',
+      distributor: 'Distributor(s)',
+      email: 'Email'
+    };
+
+    var titlesInd = {}; for (var i in titles) titlesInd[i] = data[0].indexOf(titles[i]);
+
+    var object = {
+        titles: titles,
+        titlesInd: titlesInd
+    };
+
+    return object;
+}
+
+function getClientListByVet(vet) {
+  var clients = getClients();
+  var arrReturn = [];
+  
+  if (vet == 'ALL') { return clients.names };
+  
+  for (var i in clients.data) {
+    if (clients.data[i][clients.titlesInd.vet] == vet) {
+      arrReturn.push(clients.data[i][clients.titlesInd.client]);
+    }
+    }
+  return arrReturn
+}
+
+
+function getClientInfo(clientName){
+  var clients = getClients();
+  var objReturn = {
+    client:undefined,
+    address:undefined,
+    city:undefined,
+    state:undefined,
+    zipcode:undefined,
+    distributor:undefined,
+    email:undefined
+  };
+  
+  for (var i in clients.data) {
+    if (clientName == clients.data[i][clients.titlesInd.client]) {
+      objReturn.client = clients.data[i][clients.titlesInd.client];
+      objReturn.address = clients.data[i][clients.titlesInd.address];
+      objReturn.city = clients.data[i][clients.titlesInd.city];
+      objReturn.state = clients.data[i][clients.titlesInd.state];
+      objReturn.zipcode = clients.data[i][clients.titlesInd.zipcode];
+      objReturn.distributor = clients.data[i][clients.titlesInd.distributor];
+      objReturn.email = clients.data[i][clients.titlesInd.email];
+      return objReturn
+  }  
+}
+  return (clientName + ' client not found');
+}
+
+function getVetInfo(vetName) {
+  var vets = getVets();
+  var objReturn = {
+    vet:undefined,
+    license:undefined
+  };
+  for (var i in vets.data) {
+    if(vetName == vets.data[i][vets.titlesInd.vet]) {
+      objReturn.vet = vets.data[i][vets.titlesInd.vet];
+      objReturn.license = vets.data[i][vets.titlesInd.license];
+      return objReturn  
+    }
+}
+}
+
+function getVetsNames(){ var vets = getVets(); return vets.names; }
+
+function getVets(ss, sheet){
+  if (ss == undefined){ss=SpreadsheetApp.getActiveSpreadsheet();}
+  if (sheet == undefined){sheet=ss.getSheetByName(globalSheetNameVets);}
+ var arrNames = [];
+ var rowStart = 1; var rowLast = sheet.getLastRow(); var columnStart = 1; var columnLast = sheet.getLastColumn();
+ var data = sheet.getRange(rowStart,columnStart,rowLast,columnLast).getValues(); //(row, column, numRows, numColumns)
+
+ var titles = getVetTitles(data);
+  for (var i in data) {arrNames.push(data[i][titles.titlesInd.vet]);}
+  arrNames.shift();
+
+ var objReturn = {
+   ss:ss,
+   sheet:sheet,
+   data:data,
+   rowStart:rowStart,
+   rowLast:rowLast,
+   columnStart:columnStart,
+   columnLast:columnLast,
+   headings: data[0],
+   names:arrNames,
+   titles: titles.titles,
+   titlesInd: titles.titlesInd
+ }
+ return objReturn
+}
+
+function getVetTitles(data){
+    var titles = {
+      vet: 'Vet',
+      license: 'License Number'
+    };
+    var titlesInd = {}; for (var i in titles) titlesInd[i] = data[0].indexOf(titles[i]);
+    var object = {
+        titles: titles,
+        titlesInd: titlesInd
+    };
+    return object;
+}
+
+
+function findVetsFileById(vet){      
+  if (vet == 'FULL_VET_NAME')             {return 'GOOGLE_FILE_ID';}
+  else if (vet == 'OTHER_FULL_VET_NAME')    {return 'OTHER_GOOGLE_FILE_ID';}
+  else { return 'No id found for ' + vet; } 
+  }
+
+function findVetsSigId(id){      
+  if (id == 'FULL_VET_NAME')             {return 'GOOGLE_FILE_ID';}
+  else if (id == 'OTHER_FULL_VET_NAME')    {return 'OTHER_GOOGLE_FILE_ID';}
+  else { Logger.log('No id found for ' + id); return 'No id found'; }
+ }
